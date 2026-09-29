@@ -1,5 +1,4 @@
 // HTTP server: static files from public/, JSON API, session cookie, limits, security headers.
-import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -17,7 +16,7 @@ import type { ErrorCode } from './errors.ts';
 import type { ClientState, Session } from './types.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
-// Loopback by default: this is a local game. Set HOST=0.0.0.0 only behind TLS.
+// Loopback by default: this is a local game.
 const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const MAX_BODY = 8 * 1024;
@@ -159,7 +158,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   const sid = readSid(req);
   const session = getOrCreateSession(sid);
   if (session.id !== sid) {
-    res.setHeader('Set-Cookie', `sid=${session.id}; HttpOnly; SameSite=Strict; Path=/`);
+    res.setHeader('Set-Cookie', `sid=${session.id}; HttpOnly; Secure; SameSite=Strict; Path=/`);
   }
 
   if (pathname === '/api/state') {
@@ -211,13 +210,19 @@ const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void>
   }
 };
 
-// HTTPS when a certificate is configured; otherwise plain HTTP on loopback for local play.
-const tlsKey = process.env.TLS_KEY_FILE;
-const tlsCert = process.env.TLS_CERT_FILE;
-const useTls = Boolean(tlsKey && tlsCert);
-const server = useTls
-  ? createHttpsServer({ key: readFileSync(tlsKey!), cert: readFileSync(tlsCert!) }, handler)
-  : createHttpServer(handler);
+// HTTPS only. `npm run cert` creates a self-signed localhost certificate in certs/.
+const CERT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'certs');
+const tlsKey = process.env.TLS_KEY_FILE || path.join(CERT_DIR, 'key.pem');
+const tlsCert = process.env.TLS_CERT_FILE || path.join(CERT_DIR, 'cert.pem');
+let tls: { key: Buffer; cert: Buffer };
+try {
+  tls = { key: readFileSync(tlsKey), cert: readFileSync(tlsCert) };
+} catch {
+  console.error(`[server] TLS certificate not found (${tlsKey}, ${tlsCert}).\n` +
+    'Run `npm run cert` to create a local one, or set TLS_KEY_FILE and TLS_CERT_FILE.');
+  process.exit(1);
+}
+const server = createHttpsServer(tls, handler);
 
 // Guild calls take ~50 s; keep node:http from cutting responses before the 90 s Guild timeout.
 server.requestTimeout = 120_000;
@@ -227,5 +232,5 @@ server.keepAliveTimeout = 5_000;
 
 server.listen(PORT, HOST, () => {
   const shown = HOST === '127.0.0.1' ? 'localhost' : HOST;
-  console.log(`Agent Heist listening on ${useTls ? 'https' : 'http'}://${shown}:${PORT}`);
+  console.log(`Agent Heist listening on https://${shown}:${PORT}`);
 });

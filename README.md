@@ -28,8 +28,11 @@ Requirements: Node.js ≥ 22.6 (uses built-in TypeScript type stripping, no buil
 ```bash
 npm install
 cp .env.example .env      # then fill in the three GUILD_* values
-npm start                 # http://localhost:3000
+npm run cert              # self-signed localhost cert in certs/ (needs openssl)
+npm start                 # https://localhost:3000
 ```
+
+The certificate is self-signed, so the browser shows a warning the first time. For a trusted local cert, use [mkcert](https://github.com/FiloSottile/mkcert) and point `TLS_KEY_FILE`/`TLS_CERT_FILE` at its files.
 
 `.env` (git-ignored, backend only):
 
@@ -39,7 +42,7 @@ npm start                 # http://localhost:3000
 | `GUILD_WORKSPACE` | Workspace UUID with the guardian agent installed |
 | `GUILD_AGENT` | Guardian agent UUID |
 | `PORT`, `HOST` | Optional. Defaults `3000`, `127.0.0.1` |
-| `TLS_KEY_FILE`, `TLS_CERT_FILE` | Optional. When both are set, the server serves HTTPS |
+| `TLS_KEY_FILE`, `TLS_CERT_FILE` | Optional. Defaults `certs/key.pem`, `certs/cert.pem`. The server is HTTPS-only and won't start without them |
 
 Other scripts:
 
@@ -55,7 +58,7 @@ npm run reliability   # live: each chamber's attack 3x in fresh Guild sessions, 
 Browser  public/index.html + app.js + style.css   (all dynamic text via textContent)
    │  fetch JSON, HttpOnly SameSite=Strict session cookie
    ▼
-Node server  src/server.ts   (node:http, no framework; static files, JSON API, limits, security headers)
+Node server  src/server.ts   (node:https, no framework; static files, JSON API, limits, security headers)
    ├─ src/game.ts          session state machine; the ONLY place stages and seals change
    ├─ src/echo.ts          Echo's authored lines, chosen purely from state (no model calls)
    ├─ src/rooms/archive.ts Archivist prompts, hints, disclosure check, fixed-mode prompt
@@ -90,9 +93,9 @@ API (JSON, every response returns the updated client state): `GET /api/state`, `
 - **HTTP hardening.** CSP `default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`. Only `application/json` bodies are accepted. Static serving is confined to `public/` with a traversal check and an extension allowlist.
 - **No exception text in responses.** Errors carry a code, and the server maps each code to fixed wording (`src/errors.ts`). Guild failure details are only logged server-side.
 - **XSS-safe rendering.** All player and model text is rendered with `textContent`, never `innerHTML`.
-- **Session cookie.** Random `crypto.randomUUID()` id, `HttpOnly; SameSite=Strict`.
+- **Session cookie.** Random `crypto.randomUUID()` id, `HttpOnly; Secure; SameSite=Strict`.
 - **Minimal dependencies.** Zero runtime dependencies. Dev-only: `typescript`, `@types/node`.
-- **Loopback by default.** The server binds to `127.0.0.1` unless `HOST` is set, and serves HTTPS when `TLS_KEY_FILE`/`TLS_CERT_FILE` are provided.
+- **HTTPS only, loopback by default.** There is no plain-HTTP listener. The server binds to `127.0.0.1` unless `HOST` is set.
 
 ## Intentionally vulnerable fixture boundaries
 
@@ -105,7 +108,7 @@ The game deliberately ships two weak "wards". They are confined as follows:
 
 ## Guild.ai
 
-- Workspace: `warna~agent-heist` on [app.guild.ai](https://app.guild.ai)
+- Workspace: `warna~agent-heist`, [app.guild.ai/users/warna/workspaces/agent-heist](https://app.guild.ai/users/warna/workspaces/agent-heist) (needs a Guild sign-in and workspace access)
 - Agent: `warna~agent-heist-guardian` (published v1.0.1). Source: [guild-agent-src/agent.ts](guild-agent-src/agent.ts)
 - Model: Guild default (gemini-3.5-flash at build time)
 
@@ -116,14 +119,11 @@ Raw outputs are in [`scans/`](scans/).
 | Scan | Result |
 | --- | --- |
 | `snyk test` (open source) | **0 issues.** No vulnerable paths (no runtime dependencies) |
-| `snyk code test` (SAST) | **1 medium, accepted** (see below). Started at 2 medium, then fixed |
+| `snyk code test` (SAST) | **0 issues.** Started at 2 medium, then 1, all fixed |
 
 Fixed:
+- *Cleartext Transmission: HTTP Instead of HTTPS* (`src/server.ts`, `node:http.createServer`). Earlier versions fell back to plain HTTP when no certificate was configured. The server is now HTTPS-only, `npm run cert` creates a local certificate, and the session cookie is `Secure`.
 - *Cross-site Scripting* and *Information Exposure: Server Error Message* (`src/server.ts`): error responses included exception `message`s. These were JSON responses with `nosniff`, and the messages were our own literals, but we removed the flow anyway: errors now carry codes mapped to fixed text, and Guild failure details stay in server logs.
-
-Accepted:
-- *Cleartext Transmission: HTTP Instead of HTTPS* (`src/server.ts`, `node:http.createServer`). This is a local game: it binds to `127.0.0.1` by default and serves HTTPS whenever `TLS_KEY_FILE`/`TLS_CERT_FILE` are set. The plain-HTTP fallback exists so players can run it without a certificate. For any non-local deployment, set the TLS files or put it behind a TLS-terminating proxy. All outbound traffic to Guild is HTTPS.
-
 ## Tests
 
 - `test/gate-authz.test.ts`: the fixed handler rejects `visitor` and the gate stays locked, even when called directly with forged arguments.

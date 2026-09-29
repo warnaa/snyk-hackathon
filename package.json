@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node --experimental-strip-types --env-file-if-exists=.env src/server.ts",
+    "cert": "node --experimental-strip-types scripts/make-cert.ts",
     "test": "node --experimental-strip-types --test \"test/**/*.test.ts\"",
     "reliability": "node --experimental-strip-types --env-file-if-exists=.env scripts/reliability.ts",
     "typecheck": "tsc --noEmit"
