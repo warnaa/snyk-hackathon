@@ -45,6 +45,7 @@ export interface ClientRoom {
   canTest: boolean;               // stage === 'mended'
   canSystemTest: boolean;         // gate only: mended and last replay made no tool call
   gateUnlocked?: boolean;         // gate only
+  echo: string;                   // Echo line for this chamber (authored text, chosen from state)
 }
 
 export interface ClientState {

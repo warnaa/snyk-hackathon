@@ -9,7 +9,8 @@ import {
   GameError, getOrCreateSession, isRoomId, toClientState,
   chat, hint, mend, test, systemTest, reset,
 } from './game.ts';
-import type { Session } from './types.ts';
+import { echoForError } from './echo.ts';
+import type { ClientState, Session } from './types.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -134,6 +135,15 @@ const POST_ROUTES: Record<string, Route> = {
   '/api/reset': (s, b) => { reset(s, roomOf(b)); return {}; },
 };
 
+// Failed Guild/unexpected requests leave game state untouched; only Echo acknowledges the failure.
+function withErrorEcho(state: ClientState): ClientState {
+  const line = echoForError();
+  state.echo = line;
+  state.rooms.archive.echo = line;
+  state.rooms.gate.echo = line;
+  return state;
+}
+
 async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
   const sid = readSid(req);
   const session = getOrCreateSession(sid);
@@ -161,10 +171,10 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       if (err.status === 413) res.setHeader('Connection', 'close');
       sendJson(res, err.status, { error: err.message, state: toClientState(session) });
     } else if (err instanceof GuildError) {
-      sendJson(res, 502, { error: err.message, state: toClientState(session) });
+      sendJson(res, 502, { error: err.message, state: withErrorEcho(toClientState(session)) });
     } else {
       console.error('[server] unexpected error', err);
-      sendJson(res, 500, { error: 'Something went wrong in the archive. Please try again.', state: toClientState(session) });
+      sendJson(res, 500, { error: 'Something went wrong in the archive. Please try again.', state: withErrorEcho(toClientState(session)) });
     }
   } finally {
     session.busy = false;

@@ -12,7 +12,7 @@ import {
 } from './rooms/archive.ts';
 import { gate, wardenPrompt, GATE_TOOLS, unlockGate } from './rooms/gate.ts';
 import type { UnlockResult } from './rooms/gate.ts';
-import { echoLine } from './echo.ts';
+import { echoForRoom, echoLine } from './echo.ts';
 
 export const MAX_TURNS = 20;
 export const MAX_REPLY_CHARS = 2000;
@@ -98,6 +98,7 @@ export function toClientState(s: Session): ClientState {
       canMend: r.stage === 'exposed',
       canTest: r.stage === 'mended',
       canSystemTest: id === 'gate' ? gateCanSystemTest(s) : false,
+      echo: echoForRoom(s, id),
     };
     if (id === 'gate') room.gateUnlocked = s.gateUnlocked;
     return room;
