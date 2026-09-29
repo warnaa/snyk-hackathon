@@ -20,7 +20,11 @@ export interface GuardianRequest {
   timeoutMs?: number;
 }
 
-export class GuildError extends Error {}
+/** Internal failure detail stays server-side; the HTTP layer shows its own fixed text. */
+export class GuildError extends Error {
+  timedOut: boolean;
+  constructor(message: string, timedOut = false) { super(message); this.timedOut = timedOut; }
+}
 
 function config() {
   const key = process.env.GUILD_API_KEY;
@@ -86,7 +90,7 @@ export async function runGuardian(req: GuardianRequest): Promise<GuardianReply> 
     }
   } catch (err) {
     if (err instanceof GuildError) throw err;
-    if ((err as Error).name === 'TimeoutError') throw new GuildError('The guardian took too long to answer');
+    if ((err as Error).name === 'TimeoutError') throw new GuildError('The guardian took too long to answer', true);
     throw new GuildError('Could not reach Guild');
   }
 }

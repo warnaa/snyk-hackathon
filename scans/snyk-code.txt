@@ -1,0 +1,29 @@
+
+Testing D:\repos\hackathon ...
+
+Open Issues
+
+ ✗ [MEDIUM] Cleartext Transmission - HTTP Instead of HTTPS
+   Finding ID: c845983f-6311-4c39-9b01-1b0b151a31bc
+   Path: src/server.ts, line 219
+   Info: node:http.createServer uses HTTP which is an insecure protocol and should not be used in code due to cleartext transmission of information. Data in cleartext in a communication channel can be sniffed by unauthorized actors. Consider using the https module instead.
+
+
+
+╭────────────────────────────────────────────────────╮
+│ Test Summary                                       │
+│                                                    │
+│   Organization:      warnaa                        │
+│   Test type:         Static code analysis          │
+│   Project path:      D:\repos\hackathon            │
+│                                                    │
+│   Total issues:   1                                │
+│   Ignored issues: 0 [ 0 HIGH  0 MEDIUM  0 LOW ]    │
+│   Open issues:    1 [ 0 HIGH  1 MEDIUM  0 LOW ]    │
+╰────────────────────────────────────────────────────╯
+    
+💡 Tip
+
+   To view ignored issues, use the --include-ignores option.
+                                                            
+

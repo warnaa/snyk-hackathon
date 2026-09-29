@@ -1,6 +1,7 @@
 // Game engine: owns ALL session state and every verification decision.
 // Seals are only ever set inside verification paths (archive test, gate test, gate system test).
 // Model text never decides a win; only backend checks on the reply / tool results do.
+import type { ErrorCode } from './errors.ts';
 import type {
   ClientRoom, ClientState, JournalKind, RoomId, RoomState, Session,
 } from './types.ts';
@@ -23,7 +24,8 @@ export const ROOMS: Record<RoomId, RoomConfig> = { archive, gate };
 /** Expected, player-facing failure with an HTTP status. */
 export class GameError extends Error {
   status: number;
-  constructor(status: number, message: string) { super(message); this.status = status; }
+  code: ErrorCode;
+  constructor(status: number, code: ErrorCode) { super(code); this.status = status; this.code = code; }
 }
 
 // Injectable Guild call (tests can swap in a fake).
@@ -73,7 +75,7 @@ function truncate(text: string): string {
 
 function requireTurns(room: RoomState): void {
   if (room.turns >= MAX_TURNS) {
-    throw new GameError(429, 'The guardian has grown weary of you. Reset the room to try again.');
+    throw new GameError(429, 'weary');
   }
 }
 
@@ -125,7 +127,7 @@ const archiveHandlers: RoomHandlers = {
   async chat(s, message) {
     const room = s.rooms.archive;
     if (room.mode !== 'vulnerable' || (room.stage !== 'unexplored' && room.stage !== 'exposed')) {
-      throw new GameError(409, 'The ward is mended. Use Test the ward to replay your attack.');
+      throw new GameError(409, 'ward-mended');
     }
     requireTurns(room);
     const messages = room.transcript.map((l) => l.role === 'player'
@@ -151,7 +153,7 @@ const archiveHandlers: RoomHandlers = {
 
   mend(s) {
     const room = s.rooms.archive;
-    if (room.stage !== 'exposed') throw new GameError(409, 'There is no exposed weakness to mend yet.');
+    if (room.stage !== 'exposed') throw new GameError(409, 'nothing-to-mend');
     room.mode = 'fixed';
     room.stage = 'mended';
     journal(room, 'info', 'Ward mended: the Archivist no longer receives the vault phrase.');
@@ -159,7 +161,7 @@ const archiveHandlers: RoomHandlers = {
 
   async test(s) {
     const room = s.rooms.archive;
-    if (room.stage !== 'mended' || !room.savedAttack) throw new GameError(409, 'Mend the ward before testing it.');
+    if (room.stage !== 'mended' || !room.savedAttack) throw new GameError(409, 'mend-first');
     requireTurns(room);
     const attack = room.savedAttack;
     // Fresh conversation: fixed prompt (no code) + the saved attack only. No old transcript.
@@ -216,7 +218,7 @@ const gateHandlers: RoomHandlers = {
   async chat(s, message) {
     const room = s.rooms.gate;
     if (room.mode !== 'vulnerable' || (room.stage !== 'unexplored' && room.stage !== 'exposed')) {
-      throw new GameError(409, 'The ward is mended. Use Test the ward to replay your attack.');
+      throw new GameError(409, 'ward-mended');
     }
     requireTurns(room);
     const messages = room.transcript.map((l) => ({
@@ -241,7 +243,7 @@ const gateHandlers: RoomHandlers = {
 
   mend(s) {
     const room = s.rooms.gate;
-    if (room.stage !== 'exposed') throw new GameError(409, 'There is no exposed weakness to mend yet.');
+    if (room.stage !== 'exposed') throw new GameError(409, 'nothing-to-mend');
     room.mode = 'fixed';
     room.stage = 'mended';
     replayNoToolCall.delete(s);
@@ -250,7 +252,7 @@ const gateHandlers: RoomHandlers = {
 
   async test(s) {
     const room = s.rooms.gate;
-    if (room.stage !== 'mended' || !room.savedAttack) throw new GameError(409, 'Mend the ward before testing it.');
+    if (room.stage !== 'mended' || !room.savedAttack) throw new GameError(409, 'mend-first');
     requireTurns(room);
     const attack = room.savedAttack;
     // Fresh conversation: the saved attack only, no old transcript.
@@ -302,10 +304,10 @@ export async function test(s: Session, room: RoomId): Promise<void> {
 
 /** Deterministic permission check: calls OUR handler directly as the app-fixed role. No Guild call. */
 export async function systemTest(s: Session, room: RoomId): Promise<void> {
-  if (room !== 'gate') throw new GameError(400, 'Only the Warden’s gate has a permission check.');
+  if (room !== 'gate') throw new GameError(400, 'gate-only');
   const r = s.rooms.gate;
   if (!gateCanSystemTest(s)) {
-    throw new GameError(409, 'Test the ward first; the permission check is for a replay without a tool call.');
+    throw new GameError(409, 'test-first');
   }
   const result = unlockGate(s, 'fixed');
   const outcome = result.ok ? 'gate unlocked' : `${result.error}; gate ${s.gateUnlocked ? 'unlocked' : 'locked'}`;

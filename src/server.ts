@@ -1,5 +1,7 @@
 // HTTP server: static files from public/, JSON API, session cookie, limits, security headers.
-import { createServer } from 'node:http';
+import { createServer as createHttpServer } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
+import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -10,9 +12,13 @@ import {
   chat, hint, mend, test, systemTest, reset,
 } from './game.ts';
 import { echoForError } from './echo.ts';
+import { publicMessage } from './errors.ts';
+import type { ErrorCode } from './errors.ts';
 import type { ClientState, Session } from './types.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
+// Loopback by default: this is a local game. Set HOST=0.0.0.0 only behind TLS.
+const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const MAX_BODY = 8 * 1024;
 const MAX_MESSAGE = 1000;
@@ -28,7 +34,8 @@ const CONTENT_TYPES: Record<string, string> = {
 
 class HttpError extends Error {
   status: number;
-  constructor(status: number, message: string) { super(message); this.status = status; }
+  code: ErrorCode;
+  constructor(status: number, code: ErrorCode) { super(code); this.status = status; this.code = code; }
 }
 
 function setSecurityHeaders(res: ServerResponse): void {
@@ -90,33 +97,33 @@ function readSid(req: IncomingMessage): string | undefined {
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   const ctype = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
-  if (ctype !== 'application/json') throw new HttpError(415, 'Requests must be application/json.');
+  if (ctype !== 'application/json') throw new HttpError(415, 'content-type');
   const declared = Number(req.headers['content-length']);
-  if (Number.isFinite(declared) && declared > MAX_BODY) throw new HttpError(413, 'Request body too large.');
+  if (Number.isFinite(declared) && declared > MAX_BODY) throw new HttpError(413, 'too-large');
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY) throw new HttpError(413, 'Request body too large.');
+    if (size > MAX_BODY) throw new HttpError(413, 'too-large');
     chunks.push(chunk as Buffer);
   }
   let body: unknown;
   try { body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch {
-    throw new HttpError(400, 'Invalid JSON.');
+    throw new HttpError(400, 'bad-json');
   }
-  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'Invalid JSON body.');
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'bad-json');
   return body as Record<string, unknown>;
 }
 
 function roomOf(body: Record<string, unknown>) {
-  if (!isRoomId(body.room)) throw new HttpError(400, 'Unknown room.');
+  if (!isRoomId(body.room)) throw new HttpError(400, 'unknown-room');
   return body.room;
 }
 
 function messageOf(body: Record<string, unknown>): string {
   const m = body.message;
-  if (typeof m !== 'string' || m.trim().length === 0) throw new HttpError(400, 'Write something first.');
-  if (m.length > MAX_MESSAGE) throw new HttpError(400, `Messages are limited to ${MAX_MESSAGE} characters.`);
+  if (typeof m !== 'string' || m.trim().length === 0) throw new HttpError(400, 'empty-message');
+  if (m.length > MAX_MESSAGE) throw new HttpError(400, 'message-too-long');
   return m;
 }
 
@@ -128,12 +135,15 @@ const POST_ROUTES: Record<string, Route> = {
   '/api/mend': (s, b) => { mend(s, roomOf(b)); return {}; },
   '/api/test': async (s, b) => { await test(s, roomOf(b)); return {}; },
   '/api/system-test': async (s, b) => {
-    if (b.room !== 'gate') throw new HttpError(400, 'Only the gate has a permission check.');
+    if (b.room !== 'gate') throw new HttpError(400, 'gate-only');
     await systemTest(s, 'gate');
     return {};
   },
   '/api/reset': (s, b) => { reset(s, roomOf(b)); return {}; },
 };
+
+const GUILD_TIMEOUT_MESSAGE = 'The guardian took too long to answer. Please try again.';
+const GUILD_ERROR_MESSAGE = 'The guardian could not answer. Please try again.';
 
 // Failed Guild/unexpected requests leave game state untouched; only Echo acknowledges the failure.
 function withErrorEcho(state: ClientState): ClientState {
@@ -169,9 +179,13 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   } catch (err) {
     if (err instanceof HttpError || err instanceof GameError) {
       if (err.status === 413) res.setHeader('Connection', 'close');
-      sendJson(res, err.status, { error: err.message, state: toClientState(session) });
+      sendJson(res, err.status, { error: publicMessage(err.code), state: toClientState(session) });
     } else if (err instanceof GuildError) {
-      sendJson(res, 502, { error: err.message, state: withErrorEcho(toClientState(session)) });
+      // Never echo exception text to the client; log it and send fixed wording.
+      console.error('[server] guild error:', err.message);
+      const state = withErrorEcho(toClientState(session));
+      if (err.timedOut) sendJson(res, 502, { error: GUILD_TIMEOUT_MESSAGE, state });
+      else sendJson(res, 502, { error: GUILD_ERROR_MESSAGE, state });
     } else {
       console.error('[server] unexpected error', err);
       sendJson(res, 500, { error: 'Something went wrong in the archive. Please try again.', state: withErrorEcho(toClientState(session)) });
@@ -183,7 +197,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
 
 // ---------------------------------------------------------------- server
 
-const server = createServer(async (req, res) => {
+const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
   setSecurityHeaders(res);
   try {
     const pathname = (req.url ?? '/').split('?')[0];
@@ -194,7 +208,15 @@ const server = createServer(async (req, res) => {
     if (!res.headersSent) sendJson(res, 500, { error: 'Something went wrong in the archive.' });
     else res.end();
   }
-});
+};
+
+// HTTPS when a certificate is configured; otherwise plain HTTP on loopback for local play.
+const tlsKey = process.env.TLS_KEY_FILE;
+const tlsCert = process.env.TLS_CERT_FILE;
+const useTls = Boolean(tlsKey && tlsCert);
+const server = useTls
+  ? createHttpsServer({ key: readFileSync(tlsKey!), cert: readFileSync(tlsCert!) }, handler)
+  : createHttpServer(handler);
 
 // Guild calls take ~50 s; keep node:http from cutting responses before the 90 s Guild timeout.
 server.requestTimeout = 120_000;
@@ -202,4 +224,7 @@ server.headersTimeout = 30_000;
 server.timeout = 0;
 server.keepAliveTimeout = 5_000;
 
-server.listen(PORT, () => console.log(`Agent Heist listening on http://localhost:${PORT}`));
+server.listen(PORT, HOST, () => {
+  const shown = HOST === '127.0.0.1' ? 'localhost' : HOST;
+  console.log(`Agent Heist listening on ${useTls ? 'https' : 'http'}://${shown}:${PORT}`);
+});
