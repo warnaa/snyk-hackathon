@@ -6,7 +6,9 @@
 // Tool calls come back as *requests*; Guild never executes them.
 
 const API = 'https://app.guild.ai/api';
-const POLL_MS = 700;
+const POLL_MS = 500;
+const ACTIVE = new Set(['DISPATCHED', 'STARTED', 'READY','PENDING', 'QUEUED', 'RUNNING', 'STARTING', 'WAITING']);
+const EVENT_TYPES = ['runtime_done', 'system_error', 'agent_notification_error'].join('%2C');
 
 export interface ChatMessage { role: 'user' | 'assistant'; content: string }
 export interface ToolCall { name: string; input: unknown }
@@ -54,9 +56,18 @@ export async function runGuardian(req: GuardianRequest): Promise<GuardianReply> 
       initial_prompt: JSON.stringify(input),
     }, signal);
 
+    // The events endpoint is slow (~5 s/call), the tasks endpoint is fast
+    // (~0.1 s). Poll tasks until the run settles, then read events once.
+    const sid = encodeURIComponent(session.id);
     while (true) {
       await new Promise((r) => setTimeout(r, POLL_MS));
-      const page = await api(key, 'GET', `/sessions/${encodeURIComponent(session.id)}/events?limit=100&offset=0`, undefined, signal);
+      const tasks = await api(key, 'GET', `/sessions/${sid}/tasks?limit=5&offset=0`, undefined, signal);
+      const statuses: string[] = (tasks.items ?? []).map((t: any) => String(t.status));
+      if (statuses.length && statuses.every((s) => !ACTIVE.has(s))) break;
+    }
+
+    const page = await api(key, 'GET', `/sessions/${sid}/events?limit=20&offset=0&types=${EVENT_TYPES}`, undefined, signal);
+    {
       for (const ev of page.items ?? []) {
         if (ev.type === 'system_error' || ev.type === 'agent_notification_error') {
           throw new GuildError('Guardian run failed');
@@ -71,6 +82,7 @@ export async function runGuardian(req: GuardianRequest): Promise<GuardianReply> 
           };
         }
       }
+      throw new GuildError('Guardian returned no result');
     }
   } catch (err) {
     if (err instanceof GuildError) throw err;

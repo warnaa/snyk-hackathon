@@ -101,13 +101,13 @@ Every response returns the updated client state so the UI just re-renders.
 
 ### Phase 1 — Spike: Guild works (0–8 min) — BLOCKING
 
-- [ ] Create Guild.ai account/workspace; note workspace URL in "Spike findings".
-- [ ] Guild CLI installed and authenticated (use `guild-cli-workflow` skill).
-- [ ] Create one agent; confirm model access and credits; get a plain reply from it programmatically from Node.
-- [ ] Confirm how to pass a **system prompt / guardian config per request** (or create two agent configs) and how to start a **fresh conversation**.
-- [ ] Prove a **tool call** round-trip: agent calls `unlock_gate`, and the **handler runs in our backend** (either Guild returns the tool-call request to us, or Guild calls our endpoint). Record which. The authz check MUST execute in code we control.
-- [ ] Record: auth method, endpoint/SDK, request/response shape, tool mechanism, limits → "Spike findings".
-- [ ] `git init`, `.gitignore` (`node_modules`, `.env`, `dist`), `.env.example`, `package.json`, `tsconfig.json`. Create public GitHub repo.
+- [x] Create Guild.ai account/workspace; note workspace URL in "Spike findings".
+- [x] Guild CLI installed and authenticated (use `guild-cli-workflow` skill).
+- [x] Create one agent; confirm model access and credits; get a plain reply from it programmatically from Node.
+- [x] Confirm how to pass a **system prompt / guardian config per request** (or create two agent configs) and how to start a **fresh conversation**.
+- [x] Prove a **tool call** round-trip: agent calls `unlock_gate`, and the **handler runs in our backend** (either Guild returns the tool-call request to us, or Guild calls our endpoint). Record which. The authz check MUST execute in code we control.
+- [x] Record: auth method, endpoint/SDK, request/response shape, tool mechanism, limits → "Spike findings".
+- [x] `git init`, `.gitignore` (`node_modules`, `.env`, `dist`), `.env.example`, `package.json`, `tsconfig.json`. Public GitHub repo already exists: https://github.com/warnaa/snyk-hackathon
 
 > If the spike fails: fix Guild first. Do not build UI around a fake agent. Dropping Guild = scope change → ask the user.
 
@@ -185,18 +185,26 @@ Acceptance checks (from PRD — tick only after actually testing)
 
 ## 3. Spike findings (fill in during Phase 1)
 
-- Guild workspace URL:
-- Auth / env var names:
-- How we call the agent (CLI/SDK/HTTP):
-- Per-request system prompt supported? / separate agent configs?:
-- Fresh conversation mechanism:
-- Tool-call mechanism (who executes the handler):
-- Model used:
+- Guild workspace URL: workspace `warna~agent-heist` (id `01a0ee8e-0816-3bb9-0000-08f6e3809466`); agent `warna~agent-heist-guardian` (id `01a0ee8e-64c0-726e-0000-9c168704c48c`), published v1.0.1, installed with autoupdate; source in `guild-agent/`
+- Auth / env var names: `GUILD_API_KEY` = account API key formatted **`<key id>:<secret>`**, sent as Bearer. Needs scopes `sessions:write,workspaces:read,agents:read` (without `agents:read`: 400 "Invalid agent identifier"). `GUILD_WORKSPACE`, `GUILD_AGENT` must be **UUIDs**. Backend `.env` only.
+- How we call the agent (CLI/SDK/HTTP): HTTP, see `src/guild.ts`. `POST https://app.guild.ai/api/workspaces/{ws}/sessions` `{session_type:'chat', agent_id, initial_prompt: JSON input}` → poll the fast `GET /sessions/{id}/tasks` (~0.1 s) until status leaves `DISPATCHED`/`STARTED` (→ `DONE`) → one `GET /sessions/{id}/events?types=runtime_done,system_error,agent_notification_error`; `runtime_done.content` = `{text, toolCalls:[{name,input}], finishReason}`
+- Per-request system prompt supported? / separate agent configs?: Yes — one agent; `systemPrompt`, `messages`, `tools` passed per call in the JSON input
+- Fresh conversation mechanism: every call creates a new Guild session; our backend sends the full transcript it wants the model to see
+- Tool-call mechanism (who executes the handler): tools declared without `execute`; Guild returns requested `toolCalls`, **our backend runs the handler** (authz in our code). Verified by `scripts/spike.ts`: fixed → `permission denied: visitor`, vulnerable → unlocked.
+- Model used: Guild default = **gemini-3.5-flash** (seen in `llm_done`); can pin via `llmPreferences` in `generateText` if attack reliability needs it
 - Gotchas:
+  - Latency: the ~50 s was the **unfiltered** events GET (~25 s/call). With tasks polling + one filtered events read: **~12–15 s/turn** (≈3 s boot + ≈3 s LLM + ≈5.5 s events read). Use a Guild timeout of ~45 s, a clear loading state, and run reliability checks in parallel.
+  - On a tool call the model's `text` is empty, so the backend supplies Warden flavor text and journal lines.
+  - `guild agent chat --mode json` reads the agent input object directly on stdin (no `{prompt}` wrapper).
+  - `guild-agent/` is a nested git repo (remote = Guild git) and is git-ignored here. Mirror `agent.ts` into this repo for judges (Phase 5). To change it: edit, `git commit`, then `guild agent save --wait --publish` in that folder.
+  - Windows Node 24 prints a harmless `UV_HANDLE_CLOSING` assertion on exit after fetch.
 
 ## 4. Decisions log
 
 | Time | Decision | Why |
 | --- | --- | --- |
 | | Node built-in `http`, no framework | Fewer deps → cleaner Snyk scan, faster start |
+| 12:20 | One stateless coded Guild agent, prompts + transcript sent per call | Per-room prompts and fixed/vulnerable modes stay in our backend; fresh convo is trivial |
+| 12:20 | Tools declared without `execute` in Guild agent | Guild hands us the call; authz check runs in our code |
+| 12:20 | Node 22+ `--experimental-strip-types`, no build step; deps = typescript + @types/node (dev) | Minimal Snyk surface, fast start |
 | | Vault code randomized per session | No hardcoded "secret" for Snyk to flag; exact-match detection stays simple |
