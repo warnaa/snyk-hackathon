@@ -1,0 +1,7 @@
+$ node cli.mjs https://github.com/warnaa/snyk-hackathon
+(app-security-score v1.5.0, https://github.com/javiergarza-snyk/app-security-score; Docker build log omitted)
+
+Repo: https://github.com/warnaa/snyk-hackathon
+  First-party Code:  H:0 M:1 L:0
+  Dependencies:      H:0 M:0 L:0
+  Score: 9.7/10
