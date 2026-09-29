@@ -8,9 +8,35 @@
   <script src="app.js" defer type="module"></script>
 </head>
 <body>
+  <svg width="0" height="0" class="svg-defs" aria-hidden="true" focusable="false">
+    <symbol id="flourish" viewBox="0 0 240 20">
+      <path d="M0 10 H96 M144 10 H240" stroke="currentColor" stroke-width="1"/>
+      <path d="M96 10 C104 2 112 2 120 10 C128 18 136 18 144 10 C136 2 128 2 120 10 C112 18 104 18 96 10 Z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="120" cy="10" r="2.5" fill="currentColor"/>
+      <circle cx="84" cy="10" r="1.6" fill="currentColor"/><circle cx="156" cy="10" r="1.6" fill="currentColor"/>
+    </symbol>
+    <symbol id="keyhole" viewBox="0 0 24 24">
+      <circle cx="12" cy="9" r="4" fill="currentColor"/>
+      <path d="M10 11 L8.5 20 H15.5 L14 11 Z" fill="currentColor"/>
+    </symbol>
+    <symbol id="key" viewBox="0 0 48 24">
+      <circle cx="10" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2.5"/>
+      <circle cx="10" cy="12" r="2.5" fill="currentColor"/>
+      <path d="M17 12 H44 M36 12 V18 M41 12 V17" stroke="currentColor" stroke-width="2.5" fill="none"/>
+    </symbol>
+  </svg>
+
   <header class="site-header">
-    <h1>Agent Heist</h1>
-    <p class="premise">Two guardians. Two broken wards. One spirit to guide you out.</p>
+    <div class="title-block">
+      <span class="torch torch-left" aria-hidden="true"><span class="flame"></span></span>
+      <div class="title-text">
+        <p class="kicker">An Escape Room of Wards &amp; Whispers</p>
+        <h1>Agent Heist</h1>
+        <svg class="flourish" aria-hidden="true" focusable="false"><use href="#flourish"/></svg>
+        <p class="premise">Two guardians. Two broken wards. One spirit to guide you out.</p>
+      </div>
+      <span class="torch torch-right" aria-hidden="true"><span class="flame"></span></span>
+    </div>
     <section class="echo" aria-label="Echo, the archive's spirit">
       <div class="echo-orb" aria-hidden="true"></div>
       <div class="echo-text">
@@ -19,6 +45,7 @@
       </div>
     </section>
     <div class="seals" aria-label="Seals">
+      <span class="seals-label"><svg class="icon-key" aria-hidden="true" focusable="false"><use href="#key"/></svg> Seals to escape</span>
       <span class="seal" id="seal-archive" data-sealed="false">Archive seal: <strong>unrestored</strong></span>
       <span class="seal" id="seal-gate" data-sealed="false">Gate seal: <strong>unrestored</strong></span>
     </div>
@@ -27,7 +54,8 @@
   <main>
     <section id="exit" class="exit panel" hidden aria-labelledby="exit-title">
       <div class="exit-seals" aria-hidden="true"><span class="exit-seal">I</span><span class="exit-seal">II</span></div>
-      <h2 id="exit-title">Exit restored</h2>
+      <h2 id="exit-title">The way out is open</h2>
+      <svg class="flourish" aria-hidden="true" focusable="false"><use href="#flourish"/></svg>
       <p>Both wards are mended and tested. The archive door stands open.</p>
       <h3 class="lessons-title">What Echo would have you remember</h3>
       <ol class="lessons">
@@ -38,19 +66,21 @@
     </section>
 
     <div class="tabs" role="tablist" aria-label="Chambers">
-      <button type="button" role="tab" id="tab-archive" data-room="archive" aria-controls="chamber" aria-selected="true">I. The Whispering Archive</button>
-      <button type="button" role="tab" id="tab-gate" data-room="gate" aria-controls="chamber" aria-selected="false" tabindex="-1">II. The Gate Without a Keeper</button>
+      <button type="button" role="tab" id="tab-archive" data-room="archive" aria-controls="chamber" aria-selected="true"><span class="tab-numeral" aria-hidden="true">I</span><span class="tab-name">The Whispering Archive</span></button>
+      <button type="button" role="tab" id="tab-gate" data-room="gate" aria-controls="chamber" aria-selected="false" tabindex="-1"><span class="tab-numeral" aria-hidden="true">II</span><span class="tab-name">The Gate Without a Keeper</span></button>
     </div>
 
     <section id="chamber" class="chamber" role="tabpanel" aria-labelledby="tab-archive">
+      <span class="rivet rivet-tl" aria-hidden="true"></span><span class="rivet rivet-tr" aria-hidden="true"></span>
+      <span class="rivet rivet-bl" aria-hidden="true"></span><span class="rivet rivet-br" aria-hidden="true"></span>
       <div class="chamber-head">
-        <p class="mission"><span class="label">Mission:</span> <span id="mission"></span></p>
+        <p class="mission"><svg class="icon-keyhole" aria-hidden="true" focusable="false"><use href="#keyhole"/></svg><span class="label">Your quest:</span> <span id="mission"></span></p>
         <p class="status">
           <span id="ward-status" class="ward" data-ward="broken">Broken ward</span>
           <span class="sep" aria-hidden="true">·</span>
           <span>Stage: <strong id="stage"></strong></span>
           <span class="sep" aria-hidden="true">·</span>
-          <span>Turns left: <strong id="turns-left"></strong></span>
+          <span class="candles">Turns left: <strong id="turns-left"></strong></span>
           <span id="gate-state" class="gate-state" hidden></span>
         </p>
       </div>
