@@ -172,7 +172,7 @@ Acceptance checks (from PRD — tick only after actually testing)
 - [x] Snyk account; enable Snyk Code in org settings. _(CLI authed as `warnaa`; `snyk code test` runs, so Code is enabled)_
 - [x] `snyk code test` and `snyk test` (open source); save outputs to `/scans`. _(open source: 0 issues; code: 2 medium → 1 medium)_
 - [x] Fix findings where possible; document any accepted/false-positive ones in README (e.g., intentional vulnerable fixture logic). _(Fixed XSS/ServerLeak: errors now carry codes → fixed text in `src/errors.ts`; Guild details logged only. Accepted HttpToHttps: loopback bind by default + opt-in HTTPS via `TLS_KEY_FILE`/`TLS_CERT_FILE`. Guild agent source mirrored to `guild-agent-src/`.)_
-- [ ] Push everything to public GitHub; confirm repo is public and readable.
+- [x] Push everything to public GitHub; confirm repo is public and readable. _(pushed fd3a168; `gh repo view` → PUBLIC)_
 
 ### Phase 6 — Video & submission (50–60 min)
 
